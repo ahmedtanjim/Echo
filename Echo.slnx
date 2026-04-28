@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Echo.Api/Echo.Api.csproj" />
+  <Project Path="Echo.Client/Echo.Client.csproj" />
+</Solution>

@@ -1,0 +1,28 @@
+.vs/
+## Visual Studio Build Artifacts
+[Bb]in/
+[Oo]bj/
+[Aa]rm/
+[Aa]rm64/
+[Xx]64/
+[Xx]86/
+
+## User-specific files (Important: prevents sharing your local DB paths)
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## .NET Core / .NET 8
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## Environment Secrets (Crucial: Keep your Azure keys private!)
+.env
+appsettings.Development.json
+secrets.json
+
+## VS Code
+.vscode/
