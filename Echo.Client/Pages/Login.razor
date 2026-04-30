@@ -1,0 +1,52 @@
+﻿@page "/login"
+@using Echo.Client.Models
+@using Echo.Client.Auth
+@using Blazored.LocalStorage
+@using Microsoft.AspNetCore.Components.Authorization
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ILocalStorageService LocalStorage
+@inject AuthenticationStateProvider AuthStateProvider
+
+<h3>Login to ECHO</h3>
+
+<EditForm Model="loginModel" OnValidSubmit="HandleLogin">
+    <DataAnnotationsValidator />
+    <div class="form-group mb-3">
+        <label for="email">Email</label>
+        <InputText id="email" class="form-control" @bind-Value="loginModel.Email" />
+    </div>
+    <div class="form-group mb-3">
+        <label for="password">Password</label>
+        <InputText id="password" type="password" class="form-control" @bind-Value="loginModel.Password" />
+    </div>
+    <button type="submit" class="btn btn-primary d-block w-100">Login</button>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mt-3">@errorMessage</div>
+    }
+</EditForm>
+
+@code {
+    private LoginRequest loginModel = new();
+    private string? errorMessage;
+    private async Task HandleLogin()
+    {
+        var response = await Http.PostAsJsonAsync("identity/login", loginModel);
+        if(response.IsSuccessStatusCode)
+        {
+            var result = await response.Content.ReadFromJsonAsync<AuthResponse>();
+            if(result != null && !string.IsNullOrEmpty(result.AccessToken))
+            {
+                await LocalStorage.SetItemAsync("authToken", result.AccessToken);
+                ((CustomAuthenticationStateProvider)AuthStateProvider).MarkUserAsAuthenticated(result.AccessToken);
+                Navigation.NavigateTo("/");
+            }
+        }
+        else
+        {
+            errorMessage = "Login failed. Please check your credentials and try again.";
+        }
+    }
+}
