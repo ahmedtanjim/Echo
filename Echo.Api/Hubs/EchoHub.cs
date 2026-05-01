@@ -16,7 +16,7 @@ public class EchoHub : Hub
         _db = db;
     }
 
-    public async Task SendPrivateMessage(string receiverId, string message)
+    public async Task SendPrivateMessage(string receiverId, string message, string? attachmetUrl = null)
     {
         var senderId = Context.UserIdentifier;
         var senderName = Context.User?.Identity?.Name ?? "Unknown";
@@ -29,14 +29,15 @@ public class EchoHub : Hub
             SenderName = senderName,
             ReceiverId = receiverId,
             Text = message,
+            AttachmentUrl = attachmetUrl,
             SentAt = DateTime.UtcNow
         };
 
         _db.ChatMessages.Add(chatMessage);
         await _db.SaveChangesAsync();
 
-        await Clients.User(receiverId).SendAsync("ReceiveMessage", senderName, message);
+        await Clients.User(receiverId).SendAsync("ReceiveMessage", senderName, message, attachmetUrl);
 
-        await Clients.Caller.SendAsync("ReceiveMessage", senderName, message);
+        await Clients.Caller.SendAsync("ReceiveMessage", senderName, message, attachmetUrl);
     }
 }

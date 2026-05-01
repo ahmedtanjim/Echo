@@ -76,25 +76,35 @@
                     <div class="mb-2 p-2 rounded @(msg.User == _currentUserEmail ? "bg-primary text-white ms-auto" : "bg-white border text-dark me-auto")"
                          style="max-width: fit-content; word-break: break-word;">
                         <small class="fw-bold d-block">@msg.User</small>
+                        @if (!string.IsNullOrEmpty(msg.AttachmentUrl))
+                        {
+                            <img src="@msg.AttachmentUrl" class="img-fluid rounded mt-1 mb-1" style="max-height: 200px;" alt="attachment" />
+                        }
                         <span>@msg.Message</span>
                     </div>
                 }
             }
         </div>
 
-        <div class="p-3 border-top bg-white">
+        <div class="card-footer">
             <div class="input-group">
-                <input type="text" class="form-control" placeholder="Type a message..."
-                       @bind="_messageInput" @bind:event="oninput" @onkeyup="HandleKeyUp" disabled="@(_selectedUser == null)" />
-                <button class="btn btn-primary" @onclick="SendMessage" disabled="@(_selectedUser == null || string.IsNullOrWhiteSpace(_messageInput))">
-                    Send
-                </button>
+                <label class="btn btn-secondary mb-0 p-2" style="cursor: pointer;">
+                    📎
+                    <InputFile OnChange="HandleFileUpload" style="display: none;" accept="image/*" />
+                </label>
+                <input @bind="_messageInput" @onkeyup="HandleKeyUp" class="form-control" placeholder="Type a message..." disabled="@isUploading" />
+                <button class="btn btn-primary" @onclick="SendMessage" disabled="@isUploading">Send</button>
             </div>
+            @if (isUploading)
+            {
+                <div class="text-muted small mt-1">Uploading image...</div>
+            }
         </div>
     </div>
 </div>
 
 @code {
+    private bool isUploading = false;
     private HubConnection? _hubConnection;
     private List<UserDto> _users = new();
     private List<ChatMessageDto> _messages = new();
@@ -103,6 +113,8 @@
     private string? _errorMessage;
     private string _messageInput = string.Empty;
     private string _currentUserEmail = string.Empty;
+    private string functionBaseUrl = "http://localhost:7071/api";
+
 
     protected override async Task OnInitializedAsync()
     {
@@ -123,7 +135,7 @@
                 .WithAutomaticReconnect()
                 .Build();
 
-            _hubConnection.On<string, string>("ReceiveMessage", (senderName, message) =>
+            _hubConnection.On<string, string, string?>("ReceiveMessage", (senderName, message, attachmentUrl) =>
             {
                 if (_selectedUser != null && (senderName == _selectedUser.Email || senderName == _currentUserEmail))
                 {
@@ -131,6 +143,7 @@
                     {
                         User = senderName,
                         Message = message,
+                        AttachmentUrl = attachmentUrl,
                         SentAt = DateTime.UtcNow
                     });
                     InvokeAsync(StateHasChanged);
@@ -144,6 +157,52 @@
             _errorMessage = $"Error initializing: {ex.Message}";
         }
     }
+
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        if (_selectedUser == null || _hubConnection == null) return;
+        var file = e.File;
+        isUploading = true;
+        StateHasChanged();
+
+        try
+        {
+            var sasResponse = await Http.GetFromJsonAsync<SasDto>($"{functionBaseUrl}/generate-sas?fileName={file.Name}");
+            if (sasResponse == null) return;
+
+            using var stream = file.OpenReadStream(10 * 1024 * 1024); 
+            using var content = new StreamContent(stream);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+
+            using var blobClient = new HttpClient();
+            blobClient.DefaultRequestHeaders.Add("x-ms-blob-type", "BlockBlob");
+            var uploadResult = await blobClient.PutAsync(sasResponse.UploadUrl, content);
+
+            if (uploadResult.IsSuccessStatusCode)
+            {
+                await _hubConnection.SendAsync("SendPrivateMessage", _selectedUser.Id, _messageInput ?? "", sasResponse.PublicUrl);
+                _messageInput = "";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"File upload failed: {ex.Message}";
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private class SasDto
+    {
+        public string UploadUrl { get; set; } = string.Empty;
+        public string PublicUrl { get; set; } = string.Empty;
+    }
+
+
 
     private async Task SelectUser(UserDto user)
     {
@@ -176,7 +235,7 @@
         {
             try
             {
-                await _hubConnection.SendAsync("SendPrivateMessage", _selectedUser.Id, _messageInput);
+                await _hubConnection.SendAsync("SendPrivateMessage", _selectedUser.Id, _messageInput, null);
                 _messageInput = string.Empty;
             }
             catch (Exception ex)

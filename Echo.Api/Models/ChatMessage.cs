@@ -13,6 +13,7 @@ namespace Echo.Api.Models
         public string ReceiverId { get; set; } = string.Empty;
 
         public string Text { get; set; } = string.Empty;
+        public string? AttachmentUrl { get; set; }
         public DateTime SentAt { get; set; } = DateTime.UtcNow;
     }
 }

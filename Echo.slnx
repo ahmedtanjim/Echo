@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Echo.Functions/">
+    <Project Path="Echo.Functions/Echo_Functions.csproj" />
+  </Folder>
   <Project Path="Echo.Api/Echo.Api.csproj" />
   <Project Path="Echo.Client/Echo.Client.csproj" />
 </Solution>
