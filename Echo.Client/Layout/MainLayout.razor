@@ -36,6 +36,7 @@
     private async Task Logout()
     {
         await LocalStorage.RemoveItemAsync("authToken");
+        await LocalStorage.RemoveItemAsync("email");
         ((CustomAuthenticationStateProvider)AuthStateProvider).MarkUserAsLoggedOut();
         Navigation.NavigateTo("/login");
     }

@@ -2,11 +2,212 @@
 @attribute [Authorize]
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.SignalR.Client
+@using Blazored.LocalStorage
 @using Echo.Client.Models
 @inject HttpClient Http
+@inject ILocalStorageService LocalStorage
+@implements IAsyncDisposable
 
-<PageTitle>Home</PageTitle>
+<PageTitle>ECHO</PageTitle>
 
-<h1>Welcome to ECHO</h1>
+<div class="chat-container d-flex h-100" style="min-height: 80vh; border: 1px solid #ccc; border-radius: 8px; overflow: hidden;">
+    <div class="p-3 bg-light border-end" style="width: 300px; overflow-y: auto;">
+        <div class="p-3 bg-white border-bottom shadow-sm">
+            <h5 class="mb-0">Directory</h5>
+        </div>
 
-<p>You are successfully authenticated! You can now start communicating with other users securely.</p>
+        <div class="list-group list-group-flush">
+            @if (_errorMessage != null)
+            {
+                <div class="alert alert-danger m-2">@_errorMessage</div>
+            }
+            else if (_users.Count == 0)
+            {
+                <div class="p-3 text-muted text-center">Loading or no users found...</div>
+            }
+            else
+            {
+                @foreach (var user in _users)
+                {
+                    <button class="list-group-item list-group-item-action p-3 @(user.Id == _selectedUser?.Id ? "active" : "")"
+                            @onclick="() => SelectUser(user)">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1 fw-bold">@user.Email</h6>
+                        </div>
+                        <small class="text-muted">Click to chat</small>
+                    </button>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="chat-main d-flex flex-column flex-grow-1 bg-white">
+        <div class="p-3 border-bottom shadow-sm bg-light">
+            <h5 class="mb-0">
+                @if (_selectedUser != null)
+                {
+                    <span>Chatting with @_selectedUser.Email</span>
+                }
+                else
+                {
+                    <span>Select a user to start chatting</span>
+                }
+            </h5>
+        </div>
+
+        <div class="messages-area flex-grow-1 p-3" style="overflow-y: auto; background-color: #f8f9fa;">
+            @if (_selectedUser == null)
+            {
+                <div class="text-center text-muted mt-5">
+                    No active conversation.
+                </div>
+            }
+            else if (_messages.Count == 0)
+            {
+                <div class="text-center text-muted mt-5">
+                    No messages yet. Send one to start the conversation!
+                </div>
+            }
+            else
+            {
+                @foreach (var msg in _messages)
+                {
+                    <div class="mb-2 p-2 rounded @(msg.User == _currentUserEmail ? "bg-primary text-white ms-auto" : "bg-white border text-dark me-auto")"
+                         style="max-width: fit-content; word-break: break-word;">
+                        <small class="fw-bold d-block">@msg.User</small>
+                        <span>@msg.Message</span>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="p-3 border-top bg-white">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Type a message..."
+                       @bind="_messageInput" @bind:event="oninput" @onkeyup="HandleKeyUp" disabled="@(_selectedUser == null)" />
+                <button class="btn btn-primary" @onclick="SendMessage" disabled="@(_selectedUser == null || string.IsNullOrWhiteSpace(_messageInput))">
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private HubConnection? _hubConnection;
+    private List<UserDto> _users = new();
+    private List<ChatMessageDto> _messages = new();
+
+    private UserDto? _selectedUser;
+    private string? _errorMessage;
+    private string _messageInput = string.Empty;
+    private string _currentUserEmail = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _currentUserEmail = await LocalStorage.GetItemAsync<string>("email") ?? "Unknown";
+
+            _users = await Http.GetFromJsonAsync<List<UserDto>>("api/users") ?? new();
+
+            var token = await LocalStorage.GetItemAsync<string>("authToken");
+            var hubUrl = $"{Http.BaseAddress!.ToString().TrimEnd('/')}/echohub";
+
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(hubUrl, options =>
+                {
+                    options.AccessTokenProvider = () => Task.FromResult(token);
+                })
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hubConnection.On<string, string>("ReceiveMessage", (senderName, message) =>
+            {
+                if (_selectedUser != null && (senderName == _selectedUser.Email || senderName == _currentUserEmail))
+                {
+                    _messages.Add(new ChatMessageDto
+                    {
+                        User = senderName,
+                        Message = message,
+                        SentAt = DateTime.UtcNow
+                    });
+                    InvokeAsync(StateHasChanged);
+                }
+            });
+
+            await _hubConnection.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error initializing: {ex.Message}";
+        }
+    }
+
+    private async Task SelectUser(UserDto user)
+    {
+        _selectedUser = user;
+        _messages.Clear();
+        _errorMessage = null;
+
+        try
+        {
+            var apiMessages = await Http.GetFromJsonAsync<List<ApiChatMessage>>($"api/chat/history/{user.Id}");
+            if (apiMessages != null)
+            {
+                _messages = apiMessages.Select(m => new ChatMessageDto
+                {
+                    User = m.SenderName,
+                    Message = m.Text,
+                    SentAt = m.SentAt
+                }).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load history: {ex.Message}";
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (_hubConnection is not null && _selectedUser != null && !string.IsNullOrWhiteSpace(_messageInput))
+        {
+            try
+            {
+                await _hubConnection.SendAsync("SendPrivateMessage", _selectedUser.Id, _messageInput);
+                _messageInput = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Failed to send message: {ex.Message}";
+            }
+        }
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or "NumpadEnter")
+        {
+            await SendMessage();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    private class ApiChatMessage
+    {
+        public string SenderId { get; set; } = string.Empty;
+        public string SenderName { get; set; } = string.Empty;
+        public string ReceiverId { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public DateTime SentAt { get; set; }
+    }
+}

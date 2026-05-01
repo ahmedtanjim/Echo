@@ -12,7 +12,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddBlazoredLocalStorage();
 builder.Services.AddTransient<AuthHeaderHandler>();
 
-builder.Services.AddHttpClient("EchoApi", client => client.BaseAddress = new Uri(builder.HostEnvironment.BaseAddress))
+builder.Services.AddHttpClient("EchoApi", client => client.BaseAddress = new Uri("https://localhost:7223/"))
     .AddHttpMessageHandler<AuthHeaderHandler>();
 
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("EchoApi"));

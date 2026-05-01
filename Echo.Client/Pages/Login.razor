@@ -40,7 +40,8 @@
             if(result != null && !string.IsNullOrEmpty(result.AccessToken))
             {
                 await LocalStorage.SetItemAsync("authToken", result.AccessToken);
-                ((CustomAuthenticationStateProvider)AuthStateProvider).MarkUserAsAuthenticated(result.AccessToken);
+                await LocalStorage.SetItemAsync("email", loginModel.Email);
+                ((CustomAuthenticationStateProvider)AuthStateProvider).MarkUserAsAuthenticated(loginModel.Email);
                 Navigation.NavigateTo("/");
             }
         }

@@ -19,15 +19,32 @@ namespace Echo.Client.Auth
             {
                 return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
             }
-            var identity = new ClaimsIdentity(ParseClaimsFromJwt(token), "jwt");
+
+            var email = await _localStorage.GetItemAsync<string>("email") ?? "User";
+            
+            var claims = new[] 
+            { 
+                new Claim(ClaimTypes.Name, email), 
+                new Claim(ClaimTypes.Email, email) 
+            };
+            
+            var identity = new ClaimsIdentity(claims, "Bearer");
             var user = new ClaimsPrincipal(identity);
+            
             return new AuthenticationState(user);
         }
 
-        public void MarkUserAsAuthenticated(string token)
+        public void MarkUserAsAuthenticated(string email)
         {
-            var authenticatedUser = new ClaimsPrincipal(new ClaimsIdentity(ParseClaimsFromJwt(token), "jwt"));
+            var claims = new[] 
+            { 
+                new Claim(ClaimTypes.Name, email), 
+                new Claim(ClaimTypes.Email, email) 
+            };
+            
+            var authenticatedUser = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
             var authState = Task.FromResult(new AuthenticationState(authenticatedUser));
+            
             NotifyAuthenticationStateChanged(authState);
         }
 
@@ -35,24 +52,8 @@ namespace Echo.Client.Auth
         {
             var anonymousUser = new ClaimsPrincipal(new ClaimsIdentity());
             var authState = Task.FromResult(new AuthenticationState(anonymousUser));
+            
             NotifyAuthenticationStateChanged(authState);
-        }
-        private static IEnumerable<Claim> ParseClaimsFromJwt(string jwt)
-        {
-            var payload = jwt.Split('.')[1];
-            var jsonBytes = ParseBase64WithoutPadding(payload);
-            var keyValuePairs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(jsonBytes);
-            return keyValuePairs.Select(kvp => new Claim(kvp.Key, kvp.Value.ToString() ?? string.Empty));
-        }
-
-        private static byte[] ParseBase64WithoutPadding(string base64)
-        {
-            switch (base64.Length % 4)
-            {
-                case 2: base64 += "=="; break;
-                case 3: base64 += "="; break;
-            }
-            return Convert.FromBase64String(base64);
         }
     }
 }
